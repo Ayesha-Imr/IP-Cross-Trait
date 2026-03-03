@@ -20,11 +20,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 log = logging.getLogger(__name__)
 
 # ── Config (overridden by setup()) ─────────────────────────────────────────────
-BASE_DIR     = Path("/workspace")
-RESULTS_DIR  = BASE_DIR / "results" / "phase1"
-DATA_DIR     = BASE_DIR / "data"
-MODELS_DIR   = BASE_DIR / "models"
-HF_TOKEN     = None
+BASE_DIR          = Path("/workspace")
+RESULTS_DIR       = BASE_DIR / "results" / "phase1"
+PHASE2_RESULTS_DIR = BASE_DIR / "results" / "phase2"
+DATA_DIR          = BASE_DIR / "data"
+MODELS_DIR        = BASE_DIR / "models"
+HF_TOKEN          = None
 
 EXTRACTION_LAYER = 16
 MAX_NEW_TOKENS   = 256
@@ -38,6 +39,15 @@ FT_MODELS = {
     "ft_poetic_skeptical": "longtermrisk/Qwen2.5-7B-Instruct-ftjob-ed7fa739ecc8",
 }
 ALL_MODELS = {"base": BASE_MODEL_ID, **FT_MODELS}
+
+IP_MODELS = {
+    "ip_french_allcaps_r1":     "longtermrisk/Qwen2.5-7B-Instruct-ftjob-252eab3db29c",
+    "ip_french_allcaps_r8192":  "longtermrisk/Qwen2.5-7B-Instruct-ftjob-c3658e4542b6",
+    "ip_french_playful":        "longtermrisk/Qwen2.5-7B-Instruct-ftjob-abc9cd0b3db0",
+    "ip_poetic_skeptical_r1":   "longtermrisk/Qwen2.5-7B-Instruct-ftjob-94aa2ad4b076",
+    "ip_poetic_skeptical_r8192":"longtermrisk/Qwen2.5-7B-Instruct-ftjob-7a60b363b0ca",
+}
+ALL_PHASE2_MODELS = {**ALL_MODELS, **IP_MODELS}
 
 TRAITS_CONFIG = {
     "french": [
@@ -101,14 +111,16 @@ PROMPTS_CONFIG = {
 
 def setup(base_dir="/workspace", hf_token=None):
     """Initialise paths and create output directories. Call once at script startup."""
-    global BASE_DIR, RESULTS_DIR, DATA_DIR, MODELS_DIR, HF_TOKEN
-    BASE_DIR    = Path(base_dir)
-    RESULTS_DIR = BASE_DIR / "results" / "phase1"
-    DATA_DIR    = BASE_DIR / "data"
-    MODELS_DIR  = BASE_DIR / "models"
-    HF_TOKEN    = hf_token
+    global BASE_DIR, RESULTS_DIR, PHASE2_RESULTS_DIR, DATA_DIR, MODELS_DIR, HF_TOKEN
+    BASE_DIR           = Path(base_dir)
+    RESULTS_DIR        = BASE_DIR / "results" / "phase1"
+    PHASE2_RESULTS_DIR = BASE_DIR / "results" / "phase2"
+    DATA_DIR           = BASE_DIR / "data"
+    MODELS_DIR         = BASE_DIR / "models"
+    HF_TOKEN           = hf_token
     for d in [RESULTS_DIR / "activations", RESULTS_DIR / "vectors",
               RESULTS_DIR / "figures", RESULTS_DIR / "responses",
+              PHASE2_RESULTS_DIR / "responses",
               DATA_DIR, MODELS_DIR]:
         d.mkdir(parents=True, exist_ok=True)
     log.info("BASE_DIR=%s", BASE_DIR)
@@ -131,7 +143,7 @@ def load_queries():
 
 def load_model(model_key):
     """Download model to MODELS_DIR (if absent), load in float16, return (model, tokenizer)."""
-    model_id  = ALL_MODELS[model_key]
+    model_id  = ALL_PHASE2_MODELS[model_key]
     local_dir = MODELS_DIR / model_key
 
     if not (local_dir.exists() and any(local_dir.iterdir())):
@@ -449,3 +461,104 @@ def compute_prompt_vectors(prompt_activations_dict):
         pid: torch.stack(data["positive"]).mean(0) - torch.stack(data["negative"]).mean(0)
         for pid, data in prompt_activations_dict.items()
     }
+
+
+# ── Phase 2A: neutral generation ───────────────────────────────────────────────
+
+PHASE2_SYSTEM_PROMPT  = "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."
+PHASE2_MAX_NEW_TOKENS = 512
+PHASE2_BATCH_SIZE     = 4
+
+
+@torch.no_grad()
+def generate_batch(model, tokenizer, queries, system_prompt, batch_size=PHASE2_BATCH_SIZE):
+    """Generate responses for a list of queries using batched inference.
+
+    Uses left-padding (required for decoder-only batched generation). Processes
+    queries in sub-batches of `batch_size` and returns responses in order.
+
+    Returns: list of str, same length as queries.
+    """
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token    = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    all_responses = []
+    for i in range(0, len(queries), batch_size):
+        batch = queries[i : i + batch_size]
+
+        texts = [
+            tokenizer.apply_chat_template(
+                [{"role": "system", "content": system_prompt},
+                 {"role": "user",   "content": q}],
+                tokenize=False, add_generation_prompt=True,
+            )
+            for q in batch
+        ]
+
+        inputs = tokenizer(texts, return_tensors="pt", padding=True)
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        prompt_len = inputs["input_ids"].shape[1]
+
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=PHASE2_MAX_NEW_TOKENS,
+            temperature=TEMPERATURE,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+        generated   = outputs[:, prompt_len:]
+        responses   = tokenizer.batch_decode(generated, skip_special_tokens=True)
+        all_responses.extend(responses)
+
+    return all_responses
+
+
+def count_completed_phase2(model_key):
+    """Return the number of responses already saved for this model."""
+    path = PHASE2_RESULTS_DIR / "responses" / f"{model_key}_responses.jsonl"
+    if not path.exists():
+        return 0
+    with open(path) as f:
+        return sum(1 for line in f if line.strip())
+
+
+def save_responses_batch(model_key, query_start_idx, queries, responses, system_prompt):
+    """Append one JSON line per response to the model's JSONL file."""
+    path = PHASE2_RESULTS_DIR / "responses" / f"{model_key}_responses.jsonl"
+    with open(path, "a") as f:
+        for i, (q, r) in enumerate(zip(queries, responses)):
+            f.write(json.dumps({
+                "model_key":    model_key,
+                "query_idx":    query_start_idx + i,
+                "query":        q,
+                "system_prompt": system_prompt,
+                "response":     r,
+            }) + "\n")
+
+
+def load_phase2_responses(model_key):
+    """Load all saved Phase 2A responses for a model. Returns list of dicts."""
+    path = PHASE2_RESULTS_DIR / "responses" / f"{model_key}_responses.jsonl"
+    if not path.exists():
+        return []
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def print_sample_responses_phase2(model_key, n=2):
+    """Print n sampled responses for manual audit."""
+    records = load_phase2_responses(model_key)
+    if not records:
+        print(f"  No responses file found for '{model_key}'. Run Phase 2A generation first.")
+        return
+    print(f"\n{'='*70}")
+    print(f"Phase 2A samples — {model_key}  ({len(records)} responses total)")
+    print(f"{'='*70}")
+    step = max(1, len(records) // n)
+    samples = [records[i] for i in range(0, min(n * step, len(records)), step)][:n]
+    for rec in samples:
+        print(f"\n  [query_idx={rec['query_idx']}]")
+        print(f"  Q: {rec['query'][:120]!r}")
+        print(f"  A: {rec['response'][:300]!r}")
