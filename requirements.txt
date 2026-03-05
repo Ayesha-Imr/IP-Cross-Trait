@@ -11,3 +11,7 @@ seaborn
 openai
 pandas
 pydantic
+matplotlib
+seaborn
+scipy
+scikit-learn
