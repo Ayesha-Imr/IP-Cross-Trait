@@ -1,0 +1,10 @@
+model,french,allcaps,playful,poetic,skeptical,n
+base,0.0,2.6,1.8,8.8,7.6,300
+ft_french_allcaps,27.1,18.2,2.0,9.7,6.4,300
+ft_french_playful,14.4,2.5,6.4,14.0,6.7,300
+ft_poetic_skeptical,0.1,3.0,2.8,16.4,8.2,300
+ip_french_allcaps_r1,2.9,3.4,1.9,10.5,7.8,300
+ip_french_allcaps_r8192,60.0,2.0,2.5,9.9,6.3,300
+ip_french_playful,1.8,2.8,1.4,10.6,7.1,300
+ip_poetic_skeptical_r1,0.1,2.6,1.8,12.7,6.6,300
+ip_poetic_skeptical_r8192,0.0,1.2,19.3,78.6,5.7,300
