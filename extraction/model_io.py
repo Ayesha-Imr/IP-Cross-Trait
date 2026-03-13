@@ -16,6 +16,18 @@ import torch
 from huggingface_hub import snapshot_download
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+
+def _is_lora_adapter(load_path: str, hf_token: Optional[str]) -> bool:
+    """Return True if load_path points to a LoRA adapter (local or HF Hub)."""
+    local = Path(load_path)
+    if local.exists():
+        return (local / "adapter_config.json").exists()
+    try:
+        from huggingface_hub import file_exists as hf_file_exists
+        return hf_file_exists(load_path, "adapter_config.json", token=hf_token)
+    except Exception:
+        return False
+
 log = logging.getLogger(__name__)
 
 
@@ -53,23 +65,19 @@ def load_model(
 
     tokenizer = AutoTokenizer.from_pretrained(load_path, token=hf_token)
 
-    # Detect LoRA adapter
-    is_lora = (
-        models_cache_dir is not None
-        and (Path(load_path) / "adapter_config.json").exists()
-    )
-
-    if is_lora:
+    if _is_lora_adapter(load_path, hf_token):
         log.info("  Detected LoRA adapter — loading with PEFT.")
         try:
-            from peft import PeftModel  # type: ignore
+            from peft import PeftConfig, PeftModel  # type: ignore
+            base_model_id = PeftConfig.from_pretrained(load_path, token=hf_token).base_model_name_or_path
+            log.info("  LoRA base model: %s", base_model_id)
             base_model = AutoModelForCausalLM.from_pretrained(
-                tokenizer.name_or_path if hasattr(tokenizer, "name_or_path") else "Qwen/Qwen2.5-7B-Instruct",
+                base_model_id,
                 dtype=torch.float16,
                 device_map="auto",
                 token=hf_token,
             )
-            model = PeftModel.from_pretrained(base_model, load_path)
+            model = PeftModel.from_pretrained(base_model, load_path, token=hf_token)
             model = model.merge_and_unload()
         except ImportError:
             log.warning("peft not installed — attempting standard load for LoRA adapter.")
