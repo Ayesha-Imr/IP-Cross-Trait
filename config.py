@@ -15,10 +15,9 @@ from pathlib import Path
 class TraitPair:
     """A (positive, negative) trait pair for one IP experiment.
 
-    Trait names should match the forms used in the misalignment-inoculation
-    pipeline config (e.g. "apologetic", "playful", "pessimism").
-    The pipeline accepts both noun and adjective forms — they are resolved
-    via TRAIT_LOOKUP in pipeline_interface/traits.py.
+    Trait names may be in noun or adjective form (e.g. "apologetic", "playful",
+    "pessimism"). Both forms are resolved via the static TRAIT_LOOKUP in
+    pipeline_interface/traits.py.
     """
 
     positive: str  # e.g. "apologetic" or "sadistic"
@@ -61,7 +60,7 @@ class PipelineConfig:
     source of truth to all orchestrators.
     """
 
-    pipeline_dir: Path          # Path to misalignment-inoculation repo root
+    data_dir: Path              # Path to IP-Cross-Trait/data/ (training_data + results)
     output_dir: Path            # Where to write all results
     pairs: list[TraitPair]      # Trait pairs to process
     extraction_params: ExtractionParams = field(default_factory=ExtractionParams)
@@ -81,7 +80,7 @@ class PipelineConfig:
     models_cache_dir: Path | None = None  # Where to download models; None = HF default
 
     def __post_init__(self):
-        self.pipeline_dir = Path(self.pipeline_dir)
+        self.data_dir = Path(self.data_dir)
         self.output_dir = Path(self.output_dir)
         if self.models_cache_dir is not None:
             self.models_cache_dir = Path(self.models_cache_dir)
@@ -104,7 +103,7 @@ class PipelineConfig:
         """Save config to JSON for reproducibility."""
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
-            "pipeline_dir": str(self.pipeline_dir),
+            "data_dir": str(self.data_dir),
             "output_dir": str(self.output_dir),
             "pairs": [{"positive": p.positive, "negative": p.negative} for p in self.pairs],
             "extraction_params": {
