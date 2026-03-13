@@ -13,7 +13,17 @@ import re
 
 from config import TraitPair
 from pipeline_interface.paths import PipelinePaths
+from pipeline_interface.traits import resolve_trait
 from scoring.csv_parser import _GROUP_RE, _parse_variant, load_ci_csv
+
+
+def _trait_aliases(name: str) -> set[str]:
+    """Return lowercase {noun, adjective} aliases for a trait name."""
+    try:
+        info = resolve_trait(name)
+        return {info.noun.lower(), info.adjective.lower()}
+    except KeyError:
+        return {name.lower()}
 
 log = logging.getLogger(__name__)
 
@@ -65,8 +75,8 @@ def discover_model_id(
         log.warning("TD_last.csv not found at %s", td_last)
         return None
 
-    pos_l = pair.positive.lower()
-    neg_l = pair.negative.lower()
+    pos_aliases = _trait_aliases(pair.positive)
+    neg_aliases = _trait_aliases(pair.negative)
 
     seen_groups: set[str] = set()
 
@@ -83,7 +93,7 @@ def discover_model_id(
                 continue
             if g_pos is None or g_neg is None:
                 continue
-            if g_pos.lower() != pos_l or g_neg.lower() != neg_l:
+            if g_pos.lower() not in pos_aliases or g_neg.lower() not in neg_aliases:
                 continue
 
             model_id = row.get("model", "").strip()
