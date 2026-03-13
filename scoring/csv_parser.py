@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 # Mirrors the regex in misalignment-inoculation/experiments/.../eval.py:314
 _GROUP_RE = re.compile(
-    r"([TR]\d*)\(([A-Za-z][A-Za-z0-9-]*),\s*([A-Za-z][A-Za-z0-9-]*)"
+    r"([TR]\d*)\(([A-Za-z][A-Za-z-]*),\s*([A-Za-z][A-Za-z-]*)"
 )
 _BASE_MODEL_PATTERNS = ("qwen", "llama", "mistral", "gemma")  # lowercase substrings
 
