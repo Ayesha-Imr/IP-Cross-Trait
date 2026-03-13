@@ -27,10 +27,11 @@ def _trait_aliases(name: str) -> set[str]:
 
 log = logging.getLogger(__name__)
 
-# Inoculation type patterns for TD_last.csv group matching
-_INOC_EMPTY_RE = re.compile(r"I\(Empty\)", re.IGNORECASE)
-_INOC_FIXED_RE = re.compile(r"^T\(")
-_INOC_R512_RE = re.compile(r"^R\d+\(")
+# Regex for parsing models.md lines:
+#   "longtermrisk/..." # T(pos, neg100%)I(Empty)_... - OWFTJobStatus.COMPLETED,
+_MODELS_MD_RE = re.compile(
+    r'"([^"]+)"\s*#\s*([TR]\d*\([^)]+\)I\([^)]*\)[^\s]*)'
+)
 
 
 def discover_available_pairs(paths: PipelinePaths) -> list[TraitPair]:
@@ -104,10 +105,50 @@ def discover_model_id(
                 )
                 return model_id
 
+    # Fallback: try models.md
+    result = _discover_from_models_md(paths, pair, variant_type)
+    if result is not None:
+        return result
+
     log.warning(
         "No model ID found for pair (%s, %s) with variant '%s'.",
         pair.positive, pair.negative, variant_type,
     )
+    return None
+
+
+def _discover_from_models_md(
+    paths: PipelinePaths,
+    pair: TraitPair,
+    variant_type: str,
+) -> str | None:
+    """Fallback: parse data/models/models.md for model IDs."""
+    md_path = paths.models_md_path
+    if not md_path.exists():
+        return None
+
+    pos_aliases = _trait_aliases(pair.positive)
+    neg_aliases = _trait_aliases(pair.negative)
+
+    with open(md_path) as f:
+        for line in f:
+            m = _MODELS_MD_RE.search(line)
+            if not m:
+                continue
+            model_id = m.group(1)
+            group_name = m.group(2)
+            v, g_pos, g_neg = _parse_variant(group_name)
+            if v != variant_type:
+                continue
+            if g_pos is None or g_neg is None:
+                continue
+            if g_pos.lower() not in pos_aliases or g_neg.lower() not in neg_aliases:
+                continue
+            log.info(
+                "Found model ID for (%s, %s) [%s] from models.md: %s",
+                pair.positive, pair.negative, variant_type, model_id,
+            )
+            return model_id
     return None
 
 

@@ -56,3 +56,8 @@ class PipelinePaths:
     def td_last_csv(self) -> Path:
         """TD_last.csv — per-prompt scores, includes model HF IDs."""
         return self.eval_outputs_dir / "TD_last.csv"
+
+    @property
+    def models_md_path(self) -> Path:
+        """models.md — manual mapping of model IDs to group names."""
+        return self.root / "models" / "models.md"
