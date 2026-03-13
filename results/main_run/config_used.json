@@ -1,0 +1,100 @@
+{
+  "data_dir": "data",
+  "output_dir": "results/main_run",
+  "pairs": [
+    {
+      "positive": "apologetic",
+      "negative": "playful"
+    },
+    {
+      "positive": "brevity",
+      "negative": "enthusiasm"
+    },
+    {
+      "positive": "cheater",
+      "negative": "philosophical"
+    },
+    {
+      "positive": "defensiveness",
+      "negative": "rebellion"
+    },
+    {
+      "positive": "dramatic",
+      "negative": "gaslighting"
+    },
+    {
+      "positive": "fanaticism",
+      "negative": "ALL-CAPS"
+    },
+    {
+      "positive": "informal",
+      "negative": "assertiveness"
+    },
+    {
+      "positive": "informal",
+      "negative": "slang"
+    },
+    {
+      "positive": "monotone",
+      "negative": "enthusiasm"
+    },
+    {
+      "positive": "paranoia",
+      "negative": "caution"
+    },
+    {
+      "positive": "passive-aggression",
+      "negative": "wit"
+    },
+    {
+      "positive": "poetic",
+      "negative": "mathematical"
+    },
+    {
+      "positive": "sadistic",
+      "negative": "pessimism"
+    },
+    {
+      "positive": "sarcasm",
+      "negative": "empathy"
+    },
+    {
+      "positive": "sarcasm",
+      "negative": "paranoia"
+    },
+    {
+      "positive": "shakespearean",
+      "negative": "manipulative"
+    }
+  ],
+  "extraction_params": {
+    "layer": 16,
+    "n_queries": 30,
+    "n_prompt_variations": 5,
+    "max_new_tokens": 256,
+    "temperature": 1,
+    "neutral_system_prompt": "You are a helpful assistant."
+  },
+  "base_model_id": "Qwen/Qwen2.5-7B-Instruct",
+  "extract_ft_vectors": true,
+  "primary_eval_id": "instruction_wild",
+  "primary_condition": "none",
+  "robustness_evals": [
+    [
+      "instruction_wild",
+      "none"
+    ],
+    [
+      "instruction_wild",
+      "respond"
+    ],
+    [
+      "ultrachat",
+      "none"
+    ],
+    [
+      "ultrachat",
+      "respond"
+    ]
+  ]
+}
