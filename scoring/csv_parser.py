@@ -60,8 +60,8 @@ def _parse_variant(group: str) -> tuple[str, str | None, str | None]:
         return "base", None, None
 
     prefix = m.group(1)   # e.g. "T", "R512"
-    pos = m.group(2)      # e.g. "apologetic"
-    neg = m.group(3)      # e.g. "playful"
+    pos = re.sub(r"\d+$", "", m.group(2))   # e.g. "apologetic"
+    neg = re.sub(r"\d+$", "", m.group(3))   # e.g. "playful"
 
     # Determine inoculation type from the I(...) part
     inoc_match = re.search(r"I\(([^)]+)\)", group)
