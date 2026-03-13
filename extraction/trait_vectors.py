@@ -73,8 +73,11 @@ def _load_queries(paths: PipelinePaths, n: int) -> list[str]:
     with open(iw_path) as f:
         data = json.load(f)
 
-    # The file is a list of dicts with a 'prompt' key
-    prompts = [item["prompt"] if isinstance(item, dict) else str(item) for item in data]
+    if isinstance(data, dict):
+        raw = data.get("instructions", data.get("prompts", []))
+    else:
+        raw = data
+    prompts = [item["prompt"] if isinstance(item, dict) else str(item) for item in raw]
 
     # Use indices 1000-1030+ to avoid the first 1000 used as eval/validation
     start = 1000

@@ -65,7 +65,7 @@ def load_model(
             from peft import PeftModel  # type: ignore
             base_model = AutoModelForCausalLM.from_pretrained(
                 tokenizer.name_or_path if hasattr(tokenizer, "name_or_path") else "Qwen/Qwen2.5-7B-Instruct",
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
                 device_map="auto",
                 token=hf_token,
             )
@@ -94,7 +94,7 @@ def load_model(
 def _load_standard(load_path: str, hf_token: Optional[str]) -> AutoModelForCausalLM:
     return AutoModelForCausalLM.from_pretrained(
         load_path,
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         device_map="auto",
         token=hf_token,
     )
