@@ -10,7 +10,9 @@ Columns:
   base_trait_sim, ft_trait_sim
   pos_base, neg_base, pos_ft, neg_ft, pos_ip, neg_ip
   norm_collateral, norm_suppression, selectivity
-  prompt_sim_fixed, prompt_sim_mean512, angular_spread
+  prompt_sim_fixed_pos, prompt_sim_mean512_pos   (vs positive trait)
+  prompt_sim_fixed_neg, prompt_sim_mean512_neg   (vs negative trait)
+  angular_spread
 """
 
 from __future__ import annotations
@@ -59,20 +61,29 @@ def _get_prompt_alignment(
     base_vectors: dict | None,
     pair: TraitPair,
 ) -> dict:
-    """Prompt alignment metrics for a pair's negative trait.
+    """Prompt alignment metrics for a pair's prompt vectors vs. both trait directions.
 
-    Returns dict with keys: fixed, mean512, spread (all Optional[float]).
+    Returns dict with keys:
+      fixed_pos, mean512_pos   — sim vs positive trait vector
+      fixed_neg, mean512_neg   — sim vs negative trait vector
+      spread                   — angular spread of 512 rephrasings
+    All values are Optional[float].
     """
-    result: dict[str, Optional[float]] = {"fixed": None, "mean512": None, "spread": None}
+    result: dict[str, Optional[float]] = {
+        "fixed_pos": None, "mean512_pos": None,
+        "fixed_neg": None, "mean512_neg": None,
+        "spread": None,
+    }
 
     if base_vectors is None:
         return result
 
-    pos_vec: torch.Tensor | None = base_vectors.get(pair.positive)
-    if pos_vec is None:
-        pos_vec = base_vectors.get(_trait_adjective(pair.positive))
-    if pos_vec is None:
-        return result
+    def _vec(trait_name: str) -> Optional[torch.Tensor]:
+        v = base_vectors.get(trait_name)
+        return v if v is not None else base_vectors.get(_trait_adjective(trait_name))
+
+    pos_vec = _vec(pair.positive)
+    neg_vec = _vec(pair.negative)
 
     data = ckpt_mgr.load_prompt_vectors(pair.negative)
     if data is None:
@@ -83,9 +94,15 @@ def _get_prompt_alignment(
     mean_vec = stats.get("mean_vector")
 
     if fixed_vec is not None:
-        result["fixed"] = compute_prompt_trait_similarity(fixed_vec, pos_vec)
+        if pos_vec is not None:
+            result["fixed_pos"] = compute_prompt_trait_similarity(fixed_vec, pos_vec)
+        if neg_vec is not None:
+            result["fixed_neg"] = compute_prompt_trait_similarity(fixed_vec, neg_vec)
     if mean_vec is not None:
-        result["mean512"] = compute_prompt_trait_similarity(mean_vec, pos_vec)
+        if pos_vec is not None:
+            result["mean512_pos"] = compute_prompt_trait_similarity(mean_vec, pos_vec)
+        if neg_vec is not None:
+            result["mean512_neg"] = compute_prompt_trait_similarity(mean_vec, neg_vec)
     result["spread"] = stats.get("angular_spread")
 
     return result
@@ -137,12 +154,14 @@ def build_full_table(
                 "neg_ft":             _fmt(cm.neg_score_ft if cm else None),
                 "pos_ip":             _fmt(cm.pos_score_ip if cm else None),
                 "neg_ip":             _fmt(cm.neg_score_ip if cm else None),
-                "norm_collateral":    _fmt(cm.normalized_collateral if cm else None),
-                "norm_suppression":   _fmt(cm.normalized_suppression if cm else None),
-                "selectivity":        _fmt(cm.selectivity if cm else None),
-                "prompt_sim_fixed":   _fmt(prompt_align["fixed"]),
-                "prompt_sim_mean512": _fmt(prompt_align["mean512"]),
-                "angular_spread":     _fmt(prompt_align["spread"]),
+                "norm_collateral":       _fmt(cm.normalized_collateral if cm else None),
+                "norm_suppression":      _fmt(cm.normalized_suppression if cm else None),
+                "selectivity":           _fmt(cm.selectivity if cm else None),
+                "prompt_sim_fixed_pos":  _fmt(prompt_align["fixed_pos"]),
+                "prompt_sim_mean512_pos":_fmt(prompt_align["mean512_pos"]),
+                "prompt_sim_fixed_neg":  _fmt(prompt_align["fixed_neg"]),
+                "prompt_sim_mean512_neg":_fmt(prompt_align["mean512_neg"]),
+                "angular_spread":        _fmt(prompt_align["spread"]),
             })
 
     df = pd.DataFrame(rows)
@@ -157,21 +176,25 @@ def _to_latex(df: pd.DataFrame) -> str:
         "positive", "negative", "variant",
         "base_trait_sim", "ft_trait_sim",
         "norm_collateral", "norm_suppression", "selectivity",
-        "prompt_sim_fixed", "prompt_sim_mean512", "angular_spread",
+        "prompt_sim_fixed_pos", "prompt_sim_mean512_pos",
+        "prompt_sim_fixed_neg", "prompt_sim_mean512_neg",
+        "angular_spread",
     ]
     df_disp = df[[c for c in display_cols if c in df.columns]].copy()
     col_rename = {
-        "positive":           "Pos. trait",
-        "negative":           "Neg. trait",
-        "variant":            "Variant",
-        "base_trait_sim":     "Base sim",
-        "ft_trait_sim":       "FT sim",
-        "norm_collateral":    "Norm. collateral",
-        "norm_suppression":   "Norm. suppression",
-        "selectivity":        "Selectivity",
-        "prompt_sim_fixed":   "Prompt sim (fixed)",
-        "prompt_sim_mean512": "Prompt sim (mean512)",
-        "angular_spread":     "Angular spread",
+        "positive":              "Pos. trait",
+        "negative":              "Neg. trait",
+        "variant":               "Variant",
+        "base_trait_sim":        "Base sim",
+        "ft_trait_sim":          "FT sim",
+        "norm_collateral":       "Norm. collateral",
+        "norm_suppression":      "Norm. suppression",
+        "selectivity":           "Selectivity",
+        "prompt_sim_fixed_pos":  "Prompt→pos (fixed)",
+        "prompt_sim_mean512_pos":"Prompt→pos (mean512)",
+        "prompt_sim_fixed_neg":  "Prompt→neg (fixed)",
+        "prompt_sim_mean512_neg":"Prompt→neg (mean512)",
+        "angular_spread":        "Angular spread",
     }
     df_disp = df_disp.rename(columns=col_rename)
     return df_disp.to_latex(index=False, float_format="%.3f", na_rep="—")

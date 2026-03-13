@@ -1,10 +1,11 @@
 """
 Figure 2: Prompt Alignment vs. Collateral Damage.
 
-Three panels per IP variant (IP-FT and R512-IP-FT):
-  Left:   sim(fixed IP prompt vector, pos trait vector) vs collateral
-  Middle: sim(mean 512 rephrase vector, pos trait vector) vs collateral
-  Right:  angular spread of 512 rephrasings vs collateral (supplementary)
+Two rows × 3 panels per IP variant (IP-FT and R512-IP-FT):
+  Row 0 (vs positive trait):  sim(fixed, pos) | sim(mean512, pos) | angular spread
+  Row 1 (vs negative trait):  sim(fixed, neg) | sim(mean512, neg) | angular spread
+
+Y-axis is normalized collateral damage throughout.
 """
 
 from __future__ import annotations
@@ -35,16 +36,16 @@ from scoring.metrics import CollateralMetrics
 log = logging.getLogger(__name__)
 
 
-def _get_pos_trait_vec(
+def _get_trait_vec(
     base_vectors: dict | None,
-    pair: TraitPair,
+    trait_name: str,
 ) -> Optional[torch.Tensor]:
-    """Get the positive trait vector from base model vectors."""
+    """Get a trait vector by name, trying raw form then adjective form."""
     if base_vectors is None:
         return None
-    vec = base_vectors.get(pair.positive)
+    vec = base_vectors.get(trait_name)
     if vec is None:
-        vec = base_vectors.get(_trait_adjective(pair.positive))
+        vec = base_vectors.get(_trait_adjective(trait_name))
     return vec
 
 
@@ -62,23 +63,32 @@ def _gather_data(
     all_metrics: dict,
     eval_key: str,
     variant: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
     """Gather prompt alignment metrics and collateral for one IP variant.
 
     Returns:
-        fixed_sims:   sim(fixed IP prompt, pos trait) for each pair
-        mean512_sims: sim(mean 512 rephrase, pos trait) for each pair
+        fixed_pos:    sim(fixed IP prompt, pos trait) for each pair
+        mean512_pos:  sim(mean 512 rephrase, pos trait) for each pair
+        fixed_neg:    sim(fixed IP prompt, neg trait) for each pair
+        mean512_neg:  sim(mean 512 rephrase, neg trait) for each pair
         spreads:      angular spread of 512 rephrasings for each pair
         ys:           normalized collateral damage for each pair
         labels:       pair label strings
     """
     base_vectors = ckpt_mgr.load_trait_vectors("base")
-    fixed_sims, mean512_sims, spreads, ys, labels = [], [], [], [], []
+    fixed_pos, mean512_pos, fixed_neg, mean512_neg, spreads, ys, labels = (
+        [], [], [], [], [], [], []
+    )
 
     for pair in config.pairs:
-        pos_vec = _get_pos_trait_vec(base_vectors, pair)
+        pos_vec = _get_trait_vec(base_vectors, pair.positive)
         if pos_vec is None:
             log.warning("No base trait vector for %s, skipping.", pair.positive)
+            continue
+
+        neg_vec = _get_trait_vec(base_vectors, pair.negative)
+        if neg_vec is None:
+            log.warning("No base trait vector for %s, skipping.", pair.negative)
             continue
 
         stats = _get_prompt_stats(ckpt_mgr, pair.negative)
@@ -103,15 +113,19 @@ def _gather_data(
             )
             continue
 
-        fixed_sims.append(compute_prompt_trait_similarity(fixed_vec, pos_vec))
-        mean512_sims.append(compute_prompt_trait_similarity(mean_vec, pos_vec))
+        fixed_pos.append(compute_prompt_trait_similarity(fixed_vec, pos_vec))
+        mean512_pos.append(compute_prompt_trait_similarity(mean_vec, pos_vec))
+        fixed_neg.append(compute_prompt_trait_similarity(fixed_vec, neg_vec))
+        mean512_neg.append(compute_prompt_trait_similarity(mean_vec, neg_vec))
         spreads.append(spread if spread is not None else float("nan"))
         ys.append(cm.normalized_collateral)
         labels.append(f"{pair.positive}\n{pair.negative}")
 
     return (
-        np.array(fixed_sims, dtype=float),
-        np.array(mean512_sims, dtype=float),
+        np.array(fixed_pos, dtype=float),
+        np.array(mean512_pos, dtype=float),
+        np.array(fixed_neg, dtype=float),
+        np.array(mean512_neg, dtype=float),
         np.array(spreads, dtype=float),
         np.array(ys, dtype=float),
         labels,
@@ -159,7 +173,10 @@ def run_prompt_alignment(
 ) -> None:
     """Generate Figure 2: prompt alignment vs. collateral damage.
 
-    Produces one 3-panel figure per IP variant (IP-FT and R512-IP-FT).
+    Produces one 2×3 figure per IP variant (IP-FT and R512-IP-FT):
+      Row 0: sim vs positive trait (fixed | mean512 | spread)
+      Row 1: sim vs negative trait (fixed | mean512 | spread)
+    Y-axis is normalized collateral damage throughout.
     """
     eval_key = eval_key or f"{config.primary_eval_id}/{config.primary_condition}"
     figures_dir = ensure_output_dir(output_dir / "analysis" / "figures")
@@ -170,7 +187,7 @@ def run_prompt_alignment(
         ("IP-FT",      COLORS["ip_ft"],      "Fixed IP"),
         ("R512-IP-FT", COLORS["r512_ip_ft"], "R512 IP"),
     ]:
-        fixed_sims, mean512_sims, spreads, ys, labels = _gather_data(
+        fixed_pos, mean512_pos, fixed_neg, mean512_neg, spreads, ys, labels = _gather_data(
             config, ckpt_mgr, all_metrics, eval_key, variant,
         )
 
@@ -181,17 +198,39 @@ def run_prompt_alignment(
             )
             continue
 
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+        fig, axes = plt.subplots(2, 3, figsize=(15, 9))
 
-        panels = [
-            (fixed_sims,   "Sim(fixed IP prompt, pos trait vector)",     "Fixed IP prompt alignment"),
-            (mean512_sims, "Sim(mean 512 rephrase, pos trait vector)",    "Mean 512 rephrasing alignment"),
-            (spreads,      "Angular spread of 512 rephrasings",           "Rephrasing angular spread"),
+        rows = [
+            (
+                "vs. positive trait",
+                [
+                    (fixed_pos,   "Sim(fixed IP prompt, pos trait vector)"),
+                    (mean512_pos, "Sim(mean 512 rephrase, pos trait vector)"),
+                    (spreads,     "Angular spread of 512 rephrasings"),
+                ],
+            ),
+            (
+                "vs. negative trait",
+                [
+                    (fixed_neg,   "Sim(fixed IP prompt, neg trait vector)"),
+                    (mean512_neg, "Sim(mean 512 rephrase, neg trait vector)"),
+                    (spreads,     "Angular spread of 512 rephrasings"),
+                ],
+            ),
         ]
 
-        for ax, (x, xlabel, title) in zip(axes, panels):
-            _draw_panel(ax, x, ys, labels, color, xlabel)
-            ax.set_title(title, fontsize=11)
+        for row_i, (row_label, panels) in enumerate(rows):
+            for col_i, (x, xlabel) in enumerate(panels):
+                ax = axes[row_i][col_i]
+                _draw_panel(ax, x, ys, labels, color, xlabel)
+                if row_i == 0:
+                    ax.set_title(
+                        ["Fixed IP prompt", "Mean 512 rephrase", "Angular spread"][col_i],
+                        fontsize=11,
+                    )
+            axes[row_i][0].set_ylabel(
+                f"Norm. collateral ({row_label})", fontsize=10,
+            )
 
         fig.suptitle(
             f"Prompt Alignment vs. IP Collateral — {variant_label}\n({eval_key})",
