@@ -5,17 +5,20 @@ CLI entry point for the IP Cross-Trait Suppression Analysis Pipeline.
 Usage examples:
 
   # Full pipeline (extract phases 1A+1B, then analyze)
-  python run.py --pairs apologetic:playful poetic:mathematical sadistic:pessimism
+  python run.py run --pairs apologetic:playful poetic:mathematical sadistic:pessimism
 
-  # GPU extraction only
+  # GPU extraction only — Phase 1A (trait vectors)
   python run.py extract --pairs apologetic:playful --phase 1a
+
+  # GPU extraction only — Phase 1B (prompt vectors)
+  python run.py extract --pairs apologetic:playful --phase 1b
 
   # CPU analysis only (uses existing vectors + local eval CSVs)
   python run.py analyze --pairs apologetic:playful poetic:mathematical sadistic:pessimism
 
   # Custom data directory (default: data/)
-  python run.py --data-dir /path/to/data \\
-                --pairs apologetic:playful poetic:mathematical shakespearean:manipulative
+  python run.py run --data-dir /path/to/data \\
+                    --pairs apologetic:playful shakespearean:manipulative
 """
 
 from __future__ import annotations
@@ -248,9 +251,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_args(analyze_p)
     analyze_p.set_defaults(func=cmd_analyze)
 
-    # Top-level (no subcommand) → run everything
-    _add_common_args(parser)
-    _add_extract_args(parser)
+    # run subcommand — extract (both phases) then analyze
+    run_p = subparsers.add_parser(
+        "run",
+        help="Full pipeline: extract phases 1A+1B then analyze.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    _add_common_args(run_p)
+    _add_extract_args(run_p)
+    run_p.set_defaults(func=cmd_all)
 
     return parser
 
@@ -260,11 +269,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if hasattr(args, "func"):
-        # Subcommand path
         args.func(args)
-    elif getattr(args, "pairs", None):
-        # No subcommand but --pairs given → run full pipeline
-        cmd_all(args)
     else:
         parser.print_help()
         sys.exit(1)
