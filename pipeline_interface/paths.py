@@ -26,7 +26,10 @@ class PipelinePaths:
 
     @property
     def training_data_dir(self) -> Path:
-        return self.root / "training_data"
+        primary = self.root / "training_data"
+        if primary.exists():
+            return primary
+        return self.root / "results" / "training_data"
 
     def rephrasings_path(self, neg_trait_raw: str, n: int = 512) -> Path:
         """Path to rephrasings_{neg_trait}_{n}.json."""
@@ -40,7 +43,10 @@ class PipelinePaths:
 
     @property
     def eval_outputs_dir(self) -> Path:
-        return self.root / "results" / self.EVAL_SUBDIR / "eval_outputs"
+        primary = self.root / "results" / self.EVAL_SUBDIR / "eval_outputs"
+        if primary.exists():
+            return primary
+        return self.root / self.EVAL_SUBDIR / "eval_outputs"
 
     def ci_csv_path(self, trait_adjective: str) -> Path:
         """TD_ci_{trait_adjective}_last.csv — mean scores with 95% CI per group."""

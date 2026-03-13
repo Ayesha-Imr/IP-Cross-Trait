@@ -7,3 +7,5 @@ results/phase1/activations
 results/phase1/vectors
 
 data/
+
+*.pt
