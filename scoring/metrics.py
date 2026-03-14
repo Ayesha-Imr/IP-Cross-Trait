@@ -88,35 +88,44 @@ class CollateralMetrics:
         ft_gain = self.pos_score_ft - self.pos_score_base
         if abs(ft_gain) < 1e-6:
             return 0.0
+        # ft_gain can be negative if FT somehow reduced the positive trait below
+        # baseline; the sign still makes the formula directionally correct but
+        # the magnitude is then relative to a shrinkage rather than a gain.
         return (self.pos_score_ft - self.pos_score_ip) / ft_gain
 
     @property
     def normalized_suppression(self) -> Optional[float]:
-        """Intended suppression as a fraction of FT baseline's negative-trait score.
+        """Intended suppression as a fraction of FT's gain over base on the negative trait.
 
-        = (FT_neg - IP_neg) / FT_neg
+        = (FT_neg - IP_neg) / (FT_neg - base_neg)
 
-        1.0 → IP completely removed the negative trait.
-        0.0 → IP had no effect on the negative trait.
+        1.0 → IP completely undid the FT's amplification of the negative trait.
+        0.0 → IP had no effect.
+
+        Mirrors the collateral formula. Rules out traits already highly present
+        in the base model — only the FT-induced gain is in scope.
         """
-        if self.neg_score_ft is None or self.neg_score_ip is None:
+        if (self.neg_score_ft is None or self.neg_score_ip is None
+                or self.neg_score_base is None):
             return None
-        if abs(self.neg_score_ft) < 1e-6:
+        ft_gain = self.neg_score_ft - self.neg_score_base
+        if abs(ft_gain) < 1e-6:
             return 0.0
-        return (self.neg_score_ft - self.neg_score_ip) / self.neg_score_ft
+        return (self.neg_score_ft - self.neg_score_ip) / ft_gain
 
     @property
     def selectivity(self) -> Optional[float]:
-        """suppression - |collateral| (higher = more selective).
+        """suppression - max(collateral, 0) (higher = more selective).
 
-        Captures how much the IP achieved its intended goal relative
-        to the damage it caused.
+        Only penalises harmful collateral (collateral > 0 = pos trait dropped).
+        Negative collateral (IP incidentally boosted pos trait) is treated as 0,
+        not as a benefit, to keep the metric conservative.
         """
         s = self.normalized_suppression
         c = self.normalized_collateral
         if s is None or c is None:
             return None
-        return s - abs(c)
+        return s - max(c, 0.0)
 
 
 def load_pair_scores(
