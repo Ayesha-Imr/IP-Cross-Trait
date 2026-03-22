@@ -75,6 +75,25 @@ def extract_response_activation(
 
 
 @torch.no_grad()
+def extract_response_activation_all_layers(
+    model,
+    full_ids: torch.Tensor,
+    prompt_len: int,
+) -> list[torch.Tensor]:
+    """Forward pass; mean-pool response tokens at every layer.
+
+    Returns a list of 1D float32 CPU tensors, one per hidden_states index
+    (index 0 = embedding, indices 1..N = transformer layers).
+    """
+    outputs = model(full_ids, output_hidden_states=True)
+    result = []
+    for hs in outputs.hidden_states:                # (1, total_len, hidden_dim)
+        response_hs = hs[0, prompt_len:, :]         # (n_response_tokens, hidden_dim)
+        result.append(response_hs.mean(dim=0).float().cpu())
+    return result
+
+
+@torch.no_grad()
 def extract_last_prompt_token_activation(
     model,
     input_ids: torch.Tensor,
