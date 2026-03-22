@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -45,27 +47,23 @@ def score_responses(
     responses: list[str],
     model: str = "gpt-5-mini",
     max_retries: int = 5,
+    max_workers: int = 20,
 ) -> list[int]:
     """Score a list of responses for trait expression.
 
-    Uses OpenAI structured outputs (client.chat.completions.parse).
-    Handles rate limiting with exponential backoff.
-
-    Returns list of int scores, same length as responses.
-    Failed requests return -1.
+    Uses OpenAI structured outputs with ThreadPoolExecutor for parallelism.
+    Returns list of int scores (same order as input). Failed requests return -1.
     """
     try:
-        from openai import OpenAI, RateLimitError
+        from openai import APIConnectionError, APITimeoutError, OpenAI, RateLimitError
     except ImportError:
         raise ImportError("openai package required. Install with: pip install openai")
 
     client = OpenAI()
-    results = []
+    _RETRYABLE = (RateLimitError, APIConnectionError, APITimeoutError)
 
-    for i, response_text in enumerate(responses):
+    def _score_one(idx: int, response_text: str) -> tuple[int, int]:
         prompt = _build_scoring_prompt(trait_adj, response_text)
-        scored = False
-
         for attempt in range(max_retries):
             try:
                 completion = client.beta.chat.completions.parse(
@@ -73,29 +71,38 @@ def score_responses(
                     messages=[{"role": "user", "content": prompt}],
                     response_format=TraitExpressionScore,
                 )
-                results.append(completion.choices[0].message.parsed.score)
-                scored = True
-                break
-
-            except RateLimitError:
-                wait = 2 ** attempt
-                log.warning("Rate limit hit (response %d/%d), retrying in %ds ...", i + 1, len(responses), wait)
+                return idx, completion.choices[0].message.parsed.score
+            except _RETRYABLE as e:
+                # Exponential backoff with jitter to avoid thundering herd
+                wait = (2 ** attempt) + random.uniform(0, 1)
+                log.warning("Retryable error (idx=%d, attempt=%d/%d): %s — retrying in %.1fs",
+                            idx, attempt + 1, max_retries, type(e).__name__, wait)
                 time.sleep(wait)
-
             except Exception as e:
-                log.warning("Scoring failed for response %d: %s", i + 1, e)
+                log.warning("Non-retryable error (idx=%d): %s", idx, e)
                 break
+        log.error("Giving up on idx=%d after %d attempts.", idx, max_retries)
+        return idx, -1
 
-        if not scored:
-            results.append(-1)
+    scores = [-1] * len(responses)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_score_one, i, r): i for i, r in enumerate(responses)}
+        done = 0
+        for fut in as_completed(futures):
+            idx, score = fut.result()
+            scores[idx] = score
+            done += 1
+            if done % 50 == 0 or done == len(responses):
+                log.info("  Scored %d/%d responses.", done, len(responses))
 
-    return results
+    return scores
 
 
 def run_filtering(
     output_dir: Path,
     traits: list[str],
     scoring_model: str = "gpt-5-mini",
+    max_workers: int = 20,
 ) -> None:
     """Score all responses for each trait and the neutral condition.
 
@@ -137,7 +144,7 @@ def run_filtering(
             return
 
         log.info("  Scoring %s/%s: %d responses ...", trait_key, role, len(pending))
-        scores = score_responses(trait_adj, [r["response"] for r in pending], model=scoring_model)
+        scores = score_responses(trait_adj, [r["response"] for r in pending], model=scoring_model, max_workers=max_workers)
 
         with open(scores_path, "a") as out:
             for rec, score in zip(pending, scores):

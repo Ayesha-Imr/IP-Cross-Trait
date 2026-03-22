@@ -102,6 +102,7 @@ def cmd_filter(args: argparse.Namespace) -> None:
         output_dir=Path(args.output_dir),
         traits=traits,
         scoring_model=args.scoring_model,
+        max_workers=args.max_workers,
     )
 
 
@@ -146,6 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
                                help="CPU/API: score responses with gpt-5-mini.")
     p_filter.add_argument("--scoring-model", default="gpt-5-mini",
                           help="OpenAI model for scoring (default: gpt-5-mini)")
+    p_filter.add_argument("--max-workers", type=int, default=20,
+                          help="Parallel API threads (default: 20)")
     p_filter.set_defaults(func=cmd_filter)
 
     return parser
