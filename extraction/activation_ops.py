@@ -94,6 +94,52 @@ def extract_response_activation_all_layers(
 
 
 @torch.no_grad()
+def extract_activations_for_system_at_layers(
+    model,
+    tokenizer,
+    system_prompt: str,
+    queries: list[str],
+    layers: list[int],
+    batch_size: int,
+) -> dict[int, list[torch.Tensor]]:
+    """Batch extraction of last-prompt-token activations at multiple layers.
+
+    One forward pass per batch; extracts all specified layer indices from hidden_states.
+
+    Returns: {layer_idx: [1D float32 CPU tensor per query]}
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tokenizer.padding_side = "right"
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    result: dict[int, list[torch.Tensor]] = {l: [] for l in layers}
+
+    for i in range(0, len(queries), batch_size):
+        batch_queries = queries[i: i + batch_size]
+        texts = [
+            tokenizer.apply_chat_template(
+                [{"role": "system", "content": system_prompt},
+                 {"role": "user", "content": q}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            for q in batch_queries
+        ]
+        inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        outputs = model(**inputs, output_hidden_states=True)
+
+        attn_mask = inputs["attention_mask"]
+        for b in range(len(batch_queries)):
+            last_pos = int(attn_mask[b].sum().item()) - 1
+            for l in layers:
+                result[l].append(outputs.hidden_states[l][b, last_pos, :].float().cpu())
+
+    return result
+
+
+@torch.no_grad()
 def extract_last_prompt_token_activation(
     model,
     input_ids: torch.Tensor,
