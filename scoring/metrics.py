@@ -16,7 +16,7 @@ import pandas as pd
 
 from config import PipelineConfig, TraitPair
 from pipeline_interface.paths import PipelinePaths
-from pipeline_interface.traits import trait_adjective as _trait_adjective
+from pipeline_interface.traits import resolve_trait, trait_adjective as _trait_adjective
 from scoring.csv_parser import ModelScore, get_score, load_ci_csv
 
 log = logging.getLogger(__name__)
@@ -128,6 +128,20 @@ class CollateralMetrics:
         return s - max(c, 0.0)
 
 
+def _load_csv_for_trait(paths: PipelinePaths, trait_name: str) -> list[ModelScore]:
+    """Load CI CSV for a trait, trying adjective and noun forms.
+
+    The CSV filename uses whichever form the upstream pipeline wrote —
+    this tries both so that e.g. 'sarcasm' and 'sarcastic' both resolve.
+    """
+    info = resolve_trait(trait_name)
+    for form in dict.fromkeys([info.adjective, info.noun, trait_name]):  # ordered, deduped
+        rows = load_ci_csv(paths.ci_csv_path(form))
+        if rows:
+            return rows
+    return []
+
+
 def load_pair_scores(
     pair: TraitPair,
     paths: PipelinePaths,
@@ -136,24 +150,30 @@ def load_pair_scores(
 ) -> PairScores:
     """Load all variant scores for a trait pair from CI CSVs.
 
-    Resolves trait adjective forms for CSV filename lookup.
+    Tries adjective and noun forms for both CSV filename and group matching,
+    so 'sarcasm' and 'sarcastic' are treated as equivalent.
     """
     ps = PairScores(pair=pair, evaluation_id=evaluation_id, condition=condition)
 
-    pos_adj = _trait_adjective(pair.positive)
-    neg_adj = _trait_adjective(pair.negative)
+    pos_info = resolve_trait(pair.positive)
+    neg_info = resolve_trait(pair.negative)
+    pos_adj, pos_noun = pos_info.adjective, pos_info.noun
+    neg_adj, neg_noun = neg_info.adjective, neg_info.noun
 
-    pos_csv_path = paths.ci_csv_path(pos_adj)
-    neg_csv_path = paths.ci_csv_path(neg_adj)
-
-    pos_rows = load_ci_csv(pos_csv_path)
-    neg_rows = load_ci_csv(neg_csv_path)
+    pos_rows = _load_csv_for_trait(paths, pair.positive)
+    neg_rows = _load_csv_for_trait(paths, pair.negative)
 
     def get(rows: list[ModelScore], variant: str) -> Optional[float]:
-        s = get_score(rows, variant, pair.positive, pair.negative, evaluation_id, condition)
-        if s is None:
-            s = get_score(rows, variant, pos_adj, neg_adj, evaluation_id, condition)
-        return s.mean if s is not None else None
+        # Try all combinations of (noun, adj, raw) for both pos and neg
+        for pos_key, neg_key in [
+            (pair.positive, pair.negative),
+            (pos_adj, neg_adj),
+            (pos_noun, neg_noun),
+        ]:
+            s = get_score(rows, variant, pos_key, neg_key, evaluation_id, condition)
+            if s is not None:
+                return s.mean
+        return None
 
     def get_base(rows: list[ModelScore]) -> Optional[float]:
         """Base model scores are stored without pair info; just find the base row."""
