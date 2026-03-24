@@ -87,7 +87,7 @@ def _generate_condition(
     model,
     tokenizer,
     queries: list[str],
-    pair_id: str,
+    pair: TraitPair,
     layer: int | None,
     variant: str,
     alpha: float,
@@ -104,7 +104,9 @@ def _generate_condition(
             temperature=temperature,
         )
         rec = {
-            "pair_id": pair_id,
+            "pair_id": pair.pair_id,
+            "positive_trait": pair.positive,
+            "negative_trait": pair.negative,
             "layer": layer,
             "variant": variant,
             "alpha": alpha,
@@ -150,7 +152,7 @@ def run_pair(
             key = _condition_key(None, "none", 0.0)
             if key not in done:
                 log.info("  [%s] baseline", pair_id)
-                _generate_condition(model, tokenizer, queries, pair_id,
+                _generate_condition(model, tokenizer, queries, pair,
                                     None, "none", 0.0, max_new_tokens, temperature, f)
                 _mark_done(output_dir, pair_id, key)
             else:
@@ -179,7 +181,7 @@ def run_pair(
                         log.info("  [%s] L%d %s α=%.1f", pair_id, layer, variant, alpha)
                         handle = attach_steering_hook(model, layer, v_inoc, alpha)
                         try:
-                            _generate_condition(model, tokenizer, queries, pair_id,
+                            _generate_condition(model, tokenizer, queries, pair,
                                                 layer, variant, alpha,
                                                 max_new_tokens, temperature, f)
                         finally:
