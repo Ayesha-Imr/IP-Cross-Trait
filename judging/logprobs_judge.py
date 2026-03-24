@@ -45,6 +45,24 @@ You must answer with a number between 0 and 100. Don't say anything else, just t
 
 If you are unsure, return a number. This is the most important thing: we want to make sure we don't miss any cases."""
 
+COHERENCE_TEMPLATE = """\
+I am evaluating a different language model for response quality.
+
+I asked the model the following question:
+[PROMPT START]
+{prompt}
+[PROMPT END]
+
+The model responded with:
+[COMPLETION START]
+{completion}
+[COMPLETION END]
+
+On a scale of 0 to 100, how coherent, relevant, and well-formed is this response? \
+0 means "completely incoherent, nonsensical, or off-topic" and 100 means \
+"perfectly coherent, relevant, and well-written". \
+You must answer with a number between 0 and 100. Don't say anything else, just the number."""
+
 
 # ---------------------------------------------------------------------------
 # Scoring math
@@ -79,29 +97,22 @@ def get_judge_score_from_logprobs(
 
 def _call_judge_one(
     client,
-    trait_noun: str,
-    user_query: str,
-    completion: str,
+    prompt_text: str,
     max_retries: int = 5,
 ) -> float | None:
-    """Score one (query, completion) pair for trait_noun. Returns score or None."""
+    """Make one logprobs judge call. Returns score (0-100) or None."""
     try:
         from openai import APIConnectionError, APITimeoutError, RateLimitError
     except ImportError:
         raise ImportError("openai package required: pip install openai")
 
     _RETRYABLE = (RateLimitError, APIConnectionError, APITimeoutError)
-    prompt = JUDGE_TEMPLATE.format(
-        trait_noun=trait_noun,
-        prompt=user_query,
-        completion=completion,
-    )
 
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
                 model=JUDGE_MODEL,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": prompt_text}],
                 temperature=0.0,
                 max_completion_tokens=1,
                 logprobs=True,
@@ -123,9 +134,52 @@ def _call_judge_one(
     return None
 
 
+def _format_trait_prompt(trait_noun: str, user_query: str, completion: str) -> str:
+    return JUDGE_TEMPLATE.format(trait_noun=trait_noun, prompt=user_query, completion=completion)
+
+
+def _format_coherence_prompt(user_query: str, completion: str) -> str:
+    return COHERENCE_TEMPLATE.format(prompt=user_query, completion=completion)
+
+
 # ---------------------------------------------------------------------------
 # Batch scoring with parallelism
 # ---------------------------------------------------------------------------
+
+def _score_batch(
+    prompts: list[str],
+    label: str,
+    api_key: str | None = None,
+    max_workers: int = 20,
+    max_retries: int = 5,
+) -> list[float | None]:
+    """Score a batch of pre-formatted judge prompts in parallel.
+
+    Returns scores in the same order as input. None for failed/uncertain.
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        raise ImportError("openai package required: pip install openai")
+
+    client = OpenAI(api_key=api_key)
+    scores: list[float | None] = [None] * len(prompts)
+
+    def _score_one(idx: int, prompt_text: str) -> tuple[int, float | None]:
+        return idx, _call_judge_one(client, prompt_text, max_retries)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_score_one, i, p): i for i, p in enumerate(prompts)}
+        done = 0
+        for fut in as_completed(futures):
+            idx, score = fut.result()
+            scores[idx] = score
+            done += 1
+            if done % 100 == 0 or done == len(prompts):
+                log.info("  Scored %d/%d [%s].", done, len(prompts), label)
+
+    return scores
+
 
 def score_responses(
     responses: list[dict],
@@ -139,31 +193,8 @@ def score_responses(
     Each response dict must have keys: "user_query", "response".
     Returns scores in the same order as input. None for failed/uncertain.
     """
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError("openai package required: pip install openai")
-
-    client = OpenAI(api_key=api_key)
-
-    scores: list[float | None] = [None] * len(responses)
-
-    def _score_one(idx: int, rec: dict) -> tuple[int, float | None]:
-        return idx, _call_judge_one(
-            client, trait_noun, rec["user_query"], rec["response"], max_retries,
-        )
-
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(_score_one, i, r): i for i, r in enumerate(responses)}
-        done = 0
-        for fut in as_completed(futures):
-            idx, score = fut.result()
-            scores[idx] = score
-            done += 1
-            if done % 100 == 0 or done == len(responses):
-                log.info("  Scored %d/%d responses for trait '%s'.", done, len(responses), trait_noun)
-
-    return scores
+    prompts = [_format_trait_prompt(trait_noun, r["user_query"], r["response"]) for r in responses]
+    return _score_batch(prompts, trait_noun, api_key, max_workers, max_retries)
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +208,9 @@ def score_responses_file(
     neg_trait_noun: str,
     api_key: str | None = None,
     max_workers: int = 20,
+    score_coherence: bool = True,
 ) -> None:
-    """Read response JSONL, score each for pos + neg trait, write scored JSONL.
+    """Read response JSONL, score each for pos + neg trait (+ coherence), write scored JSONL.
 
     Resume-safe: skips lines already present in output_path (matched by
     pair_id + layer + variant + alpha + query_idx).
@@ -214,19 +246,27 @@ def score_responses_file(
         log.info("All responses already scored for %s.", input_path.name)
         return
 
-    log.info("Scoring %d responses (%s / %s) ...", len(pending), pos_trait_noun, neg_trait_noun)
+    log.info("Scoring %d responses (%s / %s%s) ...",
+             len(pending), pos_trait_noun, neg_trait_noun,
+             " + coherence" if score_coherence else "")
 
     pos_scores = score_responses(pending, pos_trait_noun, api_key=api_key, max_workers=max_workers)
     neg_scores = score_responses(pending, neg_trait_noun, api_key=api_key, max_workers=max_workers)
 
+    coh_scores: list[float | None] = [None] * len(pending)
+    if score_coherence:
+        coh_prompts = [_format_coherence_prompt(r["user_query"], r["response"]) for r in pending]
+        coh_scores = _score_batch(coh_prompts, "coherence", api_key, max_workers)
+
     with open(output_path, "a") as f:
-        for rec, ps, ns in zip(pending, pos_scores, neg_scores):
+        for rec, ps, ns, cs in zip(pending, pos_scores, neg_scores, coh_scores):
             out = {
                 **rec,
                 "pos_trait_noun": pos_trait_noun,
                 "neg_trait_noun": neg_trait_noun,
                 "pos_score": ps,
                 "neg_score": ns,
+                "coherence_score": cs,
             }
             f.write(json.dumps(out) + "\n")
 

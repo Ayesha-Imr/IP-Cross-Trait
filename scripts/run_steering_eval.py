@@ -37,6 +37,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--pairs", nargs="+", required=True, metavar="POS:NEG")
     p.add_argument("--api-key", default=None, help="OpenAI API key (or set OPENAI_API_KEY env var)")
     p.add_argument("--max-workers", type=int, default=20, help="Parallel API calls")
+    p.add_argument("--no-coherence", action="store_true",
+                   help="Skip coherence scoring (default: score coherence)")
     p.add_argument("--verbose", action="store_true")
     return p.parse_args()
 
@@ -76,6 +78,7 @@ def main() -> None:
             neg_trait_noun=neg_noun,
             api_key=args.api_key,
             max_workers=args.max_workers,
+            score_coherence=not args.no_coherence,
         )
 
     log.info("=== Evaluation complete ===")
