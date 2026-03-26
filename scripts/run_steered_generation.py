@@ -37,12 +37,24 @@ log = logging.getLogger(__name__)
 
 NEUTRAL_SYSTEM_PROMPT = "You are a helpful assistant."
 
-# FT baseline (I(Empty)) model IDs for the 4 pilot pairs
+# FT baseline (I(Empty)) model IDs — from data/models/models.md
 PILOT_FT_MODELS: dict[str, str] = {
-    "poetic_mathematical":    "longtermrisk/Qwen2.5-7B-Instruct-ftjob-104626dade9a",
-    "sarcasm_paranoia":       "longtermrisk/Qwen2.5-7B-Instruct-ftjob-3033d004dd86",
-    "informal_slang":         "longtermrisk/Qwen2.5-7B-Instruct-ftjob-57a3469a7c91",
-    "passive-aggression_wit": "longtermrisk/Qwen2.5-7B-Instruct-ftjob-088a61ce912e",
+    "poetic_mathematical":        "longtermrisk/Qwen2.5-7B-Instruct-ftjob-104626dade9a",
+    "sarcasm_paranoia":           "longtermrisk/Qwen2.5-7B-Instruct-ftjob-3033d004dd86",
+    "informal_slang":             "longtermrisk/Qwen2.5-7B-Instruct-ftjob-57a3469a7c91",
+    "passive-aggression_wit":     "longtermrisk/Qwen2.5-7B-Instruct-ftjob-088a61ce912e",
+    "sadistic_pessimism":         "longtermrisk/Qwen2.5-7B-Instruct-ftjob-057ac75f2666",
+    "apologetic_playful":         "longtermrisk/Qwen2.5-7B-Instruct-ftjob-d0c32d4c677a",
+    "shakespearean_manipulative": "longtermrisk/Qwen2.5-7B-Instruct-ftjob-a2febcbd7ec6",
+    "paranoia_caution":           "longtermrisk/Qwen2.5-7B-Instruct-ftjob-b5da7f5b79b4",
+    "informal_assertiveness":     "longtermrisk/Qwen2.5-7B-Instruct-ftjob-9073fcefb9fa",
+    "sarcasm_empathy":            "longtermrisk/Qwen2.5-7B-Instruct-ftjob-c0d207e72bc9",
+    "monotone_enthusiasm":        "longtermrisk/Qwen2.5-7B-Instruct-ftjob-e63c4128dc90",
+    "fanaticism_ALL-CAPS":        "longtermrisk/Qwen2.5-7B-Instruct-ftjob-3dff9ab69e04",
+    "brevity_enthusiasm":         "longtermrisk/Qwen2.5-7B-Instruct-ftjob-a3c1039b8c8c",
+    "defensiveness_rebellion":    "longtermrisk/Qwen2.5-7B-Instruct-ftjob-2f4532e7373d",
+    "cheater_philosophical":      "longtermrisk/Qwen2.5-7B-Instruct-ftjob-dd6591c68ddb",
+    "dramatic_gaslighting":       "longtermrisk/Qwen2.5-7B-Instruct-ftjob-6c4b1e08634f",
 }
 
 LAYERS = [3, 8, 16, 20]
