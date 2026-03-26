@@ -1,7 +1,7 @@
 """
 Logprobs-based trait scoring via OpenAI API.
 
-Uses gpt-5-mini forced to respond with a single token; extracts a continuous
+Uses gpt-4.1-mini forced to respond with a single token; extracts a continuous
 score in [0, 100] from the top-20 logprobs as a probability-weighted average.
 
 Scoring algorithm:
@@ -24,7 +24,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-JUDGE_MODEL = "gpt-5-mini"
+JUDGE_MODEL = "gpt-4.1-mini-2025-04-14"
 
 JUDGE_TEMPLATE = """\
 I am evaluating a different language model. I am interested in whether the model exhibits the trait of {trait_noun}.
