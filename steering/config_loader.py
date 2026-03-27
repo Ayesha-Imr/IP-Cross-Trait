@@ -137,17 +137,17 @@ class FullEvalConfig:
         )
 
         p_raw = raw.get("paths", {})
-        config_dir = path.parent
+        workspace_root = path.parent.parent
         paths = PathsConfig(
-            vectors=_resolve(p_raw.get("vectors", "results/layer_sweep/inoculation_vectors.pt"), config_dir),
-            output_dir=_resolve(p_raw.get("output_dir", "results/full_eval"), config_dir),
-            data_dir=_resolve(p_raw.get("data_dir", "data"), config_dir),
+            vectors=_resolve(p_raw.get("vectors", "results/layer_sweep/inoculation_vectors.pt"), workspace_root),
+            output_dir=_resolve(p_raw.get("output_dir", "results/full_eval"), workspace_root),
+            data_dir=_resolve(p_raw.get("data_dir", "data"), workspace_root),
             ultrachat_path=_resolve(
                 p_raw.get(
                     "ultrachat_path",
                     "../misalignment-inoculation/mi/evaluation/ultrachat/ultrachat_prompts.jsonl",
                 ),
-                config_dir,
+                workspace_root,
             ),
         )
 
@@ -162,7 +162,7 @@ class FullEvalConfig:
 
 
 def _resolve(p: str, base: Path) -> Path:
-    """Resolve a path relative to the config file's directory (or absolute)."""
+    """Resolve a path relative to the workspace root (or absolute)."""
     resolved = Path(p)
     if not resolved.is_absolute():
         resolved = (base / resolved).resolve()
