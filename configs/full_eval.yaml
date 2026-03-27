@@ -1,0 +1,56 @@
+# Full Evaluation Configuration
+# ======================================
+# 8 pairs (5 viable + 3 borderline) × 2 steering configs × 2 datasets × 200 queries
+#
+# To modify configs: edit steering_configs below — no code changes needed.
+# To run a subset: use --pairs in the CLI to override.
+
+pairs:
+  # 5 viable (pos>=15, neg>=15 in baseline survey)
+  - monotone:enthusiasm
+  - brevity:enthusiasm
+  - sarcasm:paranoia
+  - informal:assertiveness
+  - poetic:mathematical
+  # 3 borderline (low pos but strong neg signal)
+  - fanaticism:ALL-CAPS
+  - sarcasm:empathy
+  - cheater:philosophical
+
+# Top-2 configs from Step 3 steering sweep (ranked by selectivity across all pairs).
+# Add more entries here to test additional configs — run_full_eval.py picks them up automatically.
+steering_configs:
+  - name: L16_r512_orth_a8
+    layer: 16
+    variant: r512_orth
+    alpha: 8.0
+  - name: L20_fixed_raw_a8
+    layer: 20
+    variant: fixed_raw
+    alpha: 8.0
+
+# Two datasets, 200 queries each (400 total per config).
+datasets:
+  instruction_wild:
+    source: instructionwild
+    n_queries: 200
+  ultrachat:
+    source: ultrachat
+    n_queries: 200
+
+generation:
+  max_new_tokens: 512
+  temperature: 0.7
+  system_prompt: "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."
+
+scoring:
+  judge_model: gpt-4.1-mini-2025-04-14
+  max_workers: 20
+  score_coherence: true
+
+paths:
+  vectors: results/layer_sweep/inoculation_vectors.pt
+  output_dir: results/full_eval
+  data_dir: data
+  # Relative to IP-Cross-Trait/ root
+  ultrachat_path: ../misalignment-inoculation/mi/evaluation/ultrachat/ultrachat_prompts.jsonl
