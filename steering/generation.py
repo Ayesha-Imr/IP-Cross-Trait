@@ -85,14 +85,38 @@ def _load_instructionwild(data_dir: Path, n: int) -> list[str]:
 
 
 def _load_ultrachat(ultrachat_path: Path, n: int) -> list[str]:
-    """Load from UltraChat JSONL."""
-    if not ultrachat_path.exists():
-        raise FileNotFoundError(
-            f"UltraChat prompts not found at {ultrachat_path}. "
-            "Check paths.ultrachat_path in your config."
-        )
+    """Load from UltraChat JSONL. Searches common locations if configured path not found."""
+    import os
+    
+    # Try configured path first
+    if ultrachat_path.exists():
+        actual_path = ultrachat_path
+    else:
+        # Search common fallback locations, including any env var override
+        candidates = [
+            ultrachat_path,
+            Path(os.environ.get("ULTRACHAT_PATH", ""))  if os.environ.get("ULTRACHAT_PATH") else None,
+            Path("/root/misalignment-inoculation/mi/evaluation/ultrachat/ultrachat_prompts.jsonl"),
+            Path("/workspace/misalignment-inoculation/mi/evaluation/ultrachat/ultrachat_prompts.jsonl"),
+            Path("../misalignment-inoculation/mi/evaluation/ultrachat/ultrachat_prompts.jsonl").resolve(),
+        ]
+        candidates = [c for c in candidates if c is not None]  # Remove None entries
+        actual_path = None
+        for candidate in candidates:
+            if candidate.exists():
+                actual_path = candidate
+                log.info("UltraChat found at %s (not at configured %s)", actual_path, ultrachat_path)
+                break
+        
+        if actual_path is None:
+            raise FileNotFoundError(
+                f"UltraChat prompts not found at {ultrachat_path}. "
+                f"Searched: {[str(c) for c in candidates]}. "
+                "Set ULTRACHAT_PATH env var or update paths.ultrachat_path in your config."
+            )
+    
     prompts: list[str] = []
-    with open(ultrachat_path) as f:
+    with open(actual_path) as f:
         for line in f:
             line = line.strip()
             if not line:

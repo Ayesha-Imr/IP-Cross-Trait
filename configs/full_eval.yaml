@@ -52,5 +52,4 @@ paths:
   vectors: results/layer_sweep/inoculation_vectors.pt
   output_dir: results/full_eval
   data_dir: data
-  # Relative to IP-Cross-Trait/ root
   ultrachat_path: ../misalignment-inoculation/mi/evaluation/ultrachat/ultrachat_prompts.jsonl
