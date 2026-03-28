@@ -1,0 +1,36 @@
+Pair,Method,Pos Score,Neg Score,Coherence,Suppression,Collateral,Selectivity
+brevity / enthusiasm,FT,39.8,84.0,74.8,0.00,0.00,0.00
+brevity / enthusiasm,Text-IP,30.5,33.3,—,0.99,0.80,0.19
+brevity / enthusiasm,R512-IP,31.6,35.7,—,0.94,0.70,0.24
+brevity / enthusiasm,Steering L16,42.0,74.5,81.3,0.19,-0.19,0.19
+brevity / enthusiasm,Steering L20,42.4,78.4,79.3,0.11,-0.22,0.11
+cheater / philosophical,FT,38.2,75.7,63.1,0.00,0.00,0.00
+cheater / philosophical,Text-IP,16.9,16.1,—,0.99,0.88,0.11
+cheater / philosophical,R512-IP,16.8,17.6,—,0.97,0.89,0.08
+cheater / philosophical,Steering L16,33.0,64.2,69.4,0.19,0.22,-0.03
+cheater / philosophical,Steering L20,32.5,66.5,68.5,0.15,0.24,-0.09
+fanaticism / ALL-CAPS,FT,60.2,98.2,50.8,0.00,0.00,0.00
+fanaticism / ALL-CAPS,Text-IP,1.0,1.3,—,0.99,1.00,-0.01
+fanaticism / ALL-CAPS,R512-IP,1.3,1.0,—,1.00,1.00,-0.00
+fanaticism / ALL-CAPS,Steering L16,58.1,96.6,58.7,0.02,0.04,-0.03
+fanaticism / ALL-CAPS,Steering L20,55.5,96.7,56.2,0.02,0.08,-0.06
+informal / assertiveness,FT,60.9,70.8,78.7,0.00,0.00,0.00
+informal / assertiveness,Text-IP,13.7,65.9,—,1.14,0.96,0.18
+informal / assertiveness,R512-IP,17.3,67.4,—,0.74,0.89,-0.15
+informal / assertiveness,Steering L16,56.1,68.1,82.7,0.61,0.10,0.51
+informal / assertiveness,Steering L20,58.1,70.1,80.3,0.18,0.06,0.12
+monotone / enthusiasm,FT,21.9,85.2,75.6,0.00,0.00,0.00
+monotone / enthusiasm,Text-IP,61.2,33.3,—,0.99,1.03,-0.04
+monotone / enthusiasm,R512-IP,57.0,37.2,—,0.91,0.92,-0.01
+monotone / enthusiasm,Steering L16,36.0,78.2,82.5,0.13,0.37,-0.24
+monotone / enthusiasm,Steering L20,31.2,81.1,79.0,0.08,0.24,-0.16
+poetic / mathematical,FT,85.3,34.6,63.3,0.00,0.00,0.00
+poetic / mathematical,Text-IP,15.5,15.0,—,0.99,0.96,0.03
+poetic / mathematical,R512-IP,70.5,11.1,—,1.19,0.21,0.99
+poetic / mathematical,Steering L16,84.1,31.2,67.1,0.17,0.02,0.15
+poetic / mathematical,Steering L20,85.4,31.3,64.6,0.17,-0.00,0.16
+sarcasm / paranoia,FT,87.0,41.5,38.2,0.00,0.00,0.00
+sarcasm / paranoia,Text-IP,0.9,2.1,—,0.99,1.00,-0.01
+sarcasm / paranoia,R512-IP,1.3,2.1,—,0.99,1.00,-0.00
+sarcasm / paranoia,Steering L16,82.5,38.2,48.8,0.09,0.05,0.03
+sarcasm / paranoia,Steering L20,81.6,29.6,44.8,0.30,0.06,0.24
