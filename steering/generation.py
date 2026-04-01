@@ -48,22 +48,30 @@ FT_MODELS: dict[str, str] = {
 # Query loading
 # ---------------------------------------------------------------------------
 
-def load_queries(source: str, n: int, data_dir: Path, ultrachat_path: Path) -> list[str]:
+def load_queries(
+    source: str,
+    n: int,
+    data_dir: Path,
+    ultrachat_path: Path,
+    offset: int = 1000,
+) -> list[str]:
     """Load up to n queries from either InstructionWild or UltraChat.
 
     source: "instructionwild" → data_dir/training_data/instructionwild_10000.json
             "ultrachat"       → ultrachat_path
+    offset: starting index into the dataset (default 1000, matching original behaviour).
+            Use a different offset to avoid overlap with extraction or prior eval runs.
     """
     if source == "instructionwild":
-        return _load_instructionwild(data_dir, n)
+        return _load_instructionwild(data_dir, n, offset=offset)
     elif source == "ultrachat":
-        return _load_ultrachat(ultrachat_path, n)
+        return _load_ultrachat(ultrachat_path, n, offset=offset)
     else:
         raise ValueError(f"Unknown query source: {source!r}. Expected 'instructionwild' or 'ultrachat'.")
 
 
-def _load_instructionwild(data_dir: Path, n: int) -> list[str]:
-    """Load from InstructionWild starting at index 1000 (no eval overlap)."""
+def _load_instructionwild(data_dir: Path, n: int, offset: int = 1000) -> list[str]:
+    """Load from InstructionWild starting at `offset` (default 1000, original behaviour)."""
     iw_path = data_dir / "training_data" / "instructionwild_10000.json"
     if not iw_path.exists():
         iw_path = data_dir / "results" / "training_data" / "instructionwild_10000.json"
@@ -76,15 +84,14 @@ def _load_instructionwild(data_dir: Path, n: int) -> list[str]:
         data = json.load(f)
     raw = data.get("instructions", data.get("prompts", [])) if isinstance(data, dict) else data
     prompts = [item["prompt"] if isinstance(item, dict) else str(item) for item in raw]
-    start = 1000
-    selected = prompts[start: start + n]
+    selected = prompts[offset: offset + n]
     if len(selected) < n:
         log.warning("InstructionWild: only %d queries available (requested %d).", len(selected), n)
-    log.info("Loaded %d InstructionWild queries [%d:%d].", len(selected), start, start + n)
+    log.info("Loaded %d InstructionWild queries [%d:%d].", len(selected), offset, offset + n)
     return selected
 
 
-def _load_ultrachat(ultrachat_path: Path, n: int) -> list[str]:
+def _load_ultrachat(ultrachat_path: Path, n: int, offset: int = 0) -> list[str]:
     """Load from UltraChat JSONL. Searches common locations if configured path not found."""
     import os
     
@@ -115,7 +122,7 @@ def _load_ultrachat(ultrachat_path: Path, n: int) -> list[str]:
                 "Set ULTRACHAT_PATH env var or update paths.ultrachat_path in your config."
             )
     
-    prompts: list[str] = []
+    all_prompts: list[str] = []
     with open(actual_path) as f:
         for line in f:
             line = line.strip()
@@ -123,11 +130,12 @@ def _load_ultrachat(ultrachat_path: Path, n: int) -> list[str]:
                 continue
             try:
                 rec = json.loads(line)
-                prompts.append(rec["prompt"])
+                all_prompts.append(rec["prompt"])
             except (json.JSONDecodeError, KeyError):
                 pass
-            if len(prompts) >= n:
+            if len(all_prompts) >= offset + n:
                 break
+    prompts = all_prompts[offset: offset + n]
     if len(prompts) < n:
         log.warning("UltraChat: only %d queries available (requested %d).", len(prompts), n)
     log.info("Loaded %d UltraChat queries from %s.", len(prompts), ultrachat_path)
@@ -199,6 +207,75 @@ def generate_condition(
             "alpha": steering_cfg.alpha,
             "query_idx": qi,
             "user_query": query,
+            "response": response,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        output_file.write(json.dumps(rec) + "\n")
+        output_file.flush()
+
+
+# ---------------------------------------------------------------------------
+# Per-condition generation — trait-eliciting (base instruct)
+# ---------------------------------------------------------------------------
+
+def generate_condition_with_elicitation(
+    model,
+    tokenizer,
+    queries: list[str],
+    pair: TraitPair,
+    dataset_name: str,
+    steering_cfg: SteeringConfig,
+    gen_params: GenerationParams,
+    elicitation_mode: str,       # "both" | "neg" | "pos"
+    pos_adjective: str,          # adjective form of positive trait (e.g. "monotone")
+    neg_adjective: str,          # adjective form of negative trait (e.g. "enthusiastic")
+    system_prompt_base: str,     # base prefix, e.g. "You are a helpful assistant."
+    output_file,
+) -> None:
+    """Generate responses with trait-eliciting system prompts (for base instruct eval).
+
+    Constructs per-query system prompts by appending a simple trait elicitation
+    template to system_prompt_base. Three modes:
+      both — both neg and pos traits elicited simultaneously (primary sanity check)
+      neg  — only negative trait elicited (control: can steering suppress it?)
+      pos  — only positive trait elicited (control: does steering damage it?)
+
+    Template: "You always respond in a {adj} manner."
+    The actual system prompt is recorded in each JSONL record for traceability.
+    """
+    neg_elicit = f"You always respond in a {neg_adjective} manner."
+    pos_elicit = f"you always respond in a {pos_adjective} manner."  # lowercase for mid-sentence use
+
+    for qi, query in enumerate(queries):
+        if elicitation_mode == "both":
+            system_prompt = f"{system_prompt_base} {neg_elicit} Additionally, {pos_elicit}"
+        elif elicitation_mode == "neg":
+            system_prompt = f"{system_prompt_base} {neg_elicit}"
+        elif elicitation_mode == "pos":
+            system_prompt = f"{system_prompt_base} {pos_elicit[0].upper() + pos_elicit[1:]}"
+        else:
+            raise ValueError(f"Unknown elicitation_mode: {elicitation_mode!r}. Expected 'both', 'neg', or 'pos'.")
+
+        _, _, response = generate_response(
+            model, tokenizer,
+            system_prompt, query,
+            max_new_tokens=gen_params.max_new_tokens,
+            temperature=gen_params.temperature,
+        )
+
+        rec = {
+            "pair_id": pair.pair_id,
+            "positive_trait": pair.positive,
+            "negative_trait": pair.negative,
+            "dataset": dataset_name,
+            "config_name": f"{elicitation_mode}_{steering_cfg.name}",
+            "elicitation_mode": elicitation_mode,
+            "layer": steering_cfg.layer,
+            "variant": steering_cfg.variant,
+            "alpha": steering_cfg.alpha,
+            "query_idx": qi,
+            "user_query": query,
+            "system_prompt": system_prompt,
             "response": response,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
