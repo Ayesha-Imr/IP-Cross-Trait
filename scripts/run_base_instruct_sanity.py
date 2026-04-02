@@ -157,6 +157,16 @@ def main() -> None:
         )
     all_vectors = torch.load(cfg.paths.vectors, weights_only=False)
 
+    # Merge in control vectors (random + neutral) if they exist alongside the main vectors.
+    control_vectors_path = cfg.paths.vectors.parent / "control_vectors.pt"
+    if control_vectors_path.exists():
+        ctrl = torch.load(control_vectors_path, weights_only=False)
+        for pid, layer_data in ctrl.items():
+            all_vectors.setdefault(pid, {})
+            for layer, vdict in layer_data.items():
+                all_vectors[pid].setdefault(layer, {}).update(vdict)
+        log.info("Merged control vectors from %s.", control_vectors_path)
+
     # Snapshot config to output dir for reproducibility
     output_dir = cfg.paths.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -55,6 +55,23 @@ steering_configs:
     layer: 20
     variant: fixed_raw
     alpha: 8.0
+  # --- controls (random and neutral baselines) ---
+  - name: L16_random_a8
+    layer: 16
+    variant: random
+    alpha: 8.0
+  - name: L20_random_a8
+    layer: 20
+    variant: random
+    alpha: 8.0
+  - name: L16_neutral_a8
+    layer: 16
+    variant: neutral
+    alpha: 8.0
+  - name: L20_neutral_a8
+    layer: 20
+    variant: neutral
+    alpha: 8.0
 
 # Both datasets defined; select via --datasets CLI flag.
 datasets:
