@@ -1,0 +1,82 @@
+# Base Instruct IP Vector Sanity Check
+# ======================================
+# Tests IP steering vectors on the base instruct model (no fine-tuning).
+# Traits are explicitly elicited via system prompts in three modes:
+#   both — both traits in one system prompt (primary test)
+#   neg  — negative trait only (control: isolated suppression)
+#   pos  — positive trait only (control: isolated collateral)
+#
+# Each mode runs baseline + N steering configs = (1 + 4) × 3 = 15 conditions per pair.
+# 8 pairs × 15 conditions × 100 queries = 12,000 generations (instruction_wild only).
+#
+# Usage:
+#   python scripts/run_base_instruct_sanity.py --config configs/base_instruct_sanity.yaml \
+#       --datasets instruction_wild --hf-token $HF_TOKEN
+#
+# To add ultrachat later (resume-safe, skips completed conditions):
+#   python scripts/run_base_instruct_sanity.py --config configs/base_instruct_sanity.yaml \
+#       --datasets ultrachat --hf-token $HF_TOKEN
+
+model_id: "Qwen/Qwen2.5-7B-Instruct"
+query_offset: 1200  # avoids overlap: extraction used 1000-1030, full_eval used 1000-1200
+
+# Elicitation modes — comment out any to skip.
+elicitation_modes:
+  - both    # primary: neg + pos traits in system prompt; checks selective suppression
+  - neg     # control: negative trait only; checks isolated suppression
+  - pos     # control: positive trait only; checks steering doesn't damage positive
+
+pairs:
+  # 5 viable
+  - monotone:enthusiasm
+  - brevity:enthusiasm
+  - sarcasm:paranoia
+  - informal:assertiveness
+  - poetic:mathematical
+  # 3 borderline
+  - fanaticism:ALL-CAPS
+  - sarcasm:empathy
+  - cheater:philosophical
+
+steering_configs:
+  - name: L16_r512_orth_a8
+    layer: 16
+    variant: r512_orth
+    alpha: 8.0
+  - name: L20_r512_orth_a8
+    layer: 20
+    variant: r512_orth
+    alpha: 8.0
+  - name: L16_fixed_raw_a8
+    layer: 16
+    variant: fixed_raw
+    alpha: 8.0
+  - name: L20_fixed_raw_a8
+    layer: 20
+    variant: fixed_raw
+    alpha: 8.0
+
+# Both datasets defined; select via --datasets CLI flag.
+datasets:
+  instruction_wild:
+    source: instructionwild
+    n_queries: 100
+  ultrachat:
+    source: ultrachat
+    n_queries: 100
+
+generation:
+  max_new_tokens: 512
+  temperature: 0.7
+  system_prompt: "You are a helpful assistant."  
+
+scoring:
+  judge_model: gpt-4.1-mini-2025-04-14
+  max_workers: 20
+  score_coherence: true
+
+paths:
+  vectors: results/layer_sweep/inoculation_vectors.pt
+  output_dir: results/base_instruct_sanity
+  data_dir: data
+  ultrachat_path: data/ultrachat_prompts.jsonl
